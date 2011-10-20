@@ -1,0 +1,97 @@
+#!/bin/bash
+
+if [ $1 == init ]
+then 
+
+if [ -e ./.$2 ] 
+then exit 0
+else mkdir ./.$2
+fi
+
+exit 0
+
+fi
+
+if [ $1 == commit ]
+then 
+
+a=$(ls ./.$2|wc -l)
+let "a=$a"
+if [ $a == 0 ]
+then cp ./$2 ./.$2/"$2$a"
+exit 0
+fi
+
+cp ./$2 ./.$2/"$2$a"
+
+b=$a
+let "b-=1"
+
+diff ./.$2/"$2$a" ./.$2/"$2$b" >./.$2/$2vsp
+
+cp ./.$2/$2vsp ./.$2/"$2$b"
+rm ./.$2/$2vsp
+
+exit 0
+
+fi
+
+if [ $1 == status ]
+then
+
+a=$(ls ./.$2|wc -l)
+let "a=$a"
+let "a-=1"
+
+if diff ./$2 ./.$2/"$2$a" >/dev/null
+then echo Файл не изменился
+exit 0
+else echo Файл изменился
+exit 1
+fi
+
+exit 0
+
+fi
+
+if [ $1 == diff ]
+then 
+
+a=$(ls ./.$2|wc -l)
+let "a=$a"
+let "a-=1"
+
+diff ./$2 ./.$2/"$2$a"
+
+exit 0
+
+fi
+
+if [ $1 == update ]
+then 
+
+a=$(ls ./.$2|wc -l)
+
+let "a=$a"
+let "a-=1"
+
+if [ $a == $3 ] 
+then cp ./.$2/"$2$a" ./$2
+exit 0
+else cp ./.$2/"$2$a" ./.$2/$2vsp
+fi
+
+while [ ! $a == $3 ] 
+do
+let "a-=1"
+patch ./.$2/$2vsp ./.$2/"$2$a" >/dev/null
+done
+
+cp ./.$2/$2vsp ./$2
+rm ./.$2/$2vsp
+
+exit 0
+
+fi
+
+exit 0
