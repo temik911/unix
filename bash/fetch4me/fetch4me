@@ -1,0 +1,211 @@
+#!/bin/bash -e
+
+HOME="$HOME/Desktop/fetch4me"
+REFERER=""
+QQEDIR="${HOME}/.fetch4me"
+GETELEMFUNC="wget"
+
+QUEUE_EXT=f4me
+
+read_arguments () {
+    while getopts "r:w:q" argname 
+    do
+        case "$argname" in
+            "r")
+                REFERER="$OPTARG"
+                ;;
+            "w")
+                QQEDIR="$OPTARG"
+                ;;
+            "q")
+                if [ -e $QQEDIR/.pid ]
+                then
+                    pid=$(cat $QQEDIR/.pid)
+                    kill -9 $pid
+                    rm $QQEDIR/.pid
+                    echo "Daemon quit"
+                    exit 0
+                else
+                    echo "Error: demon is not running"
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "Error: wrong arguments"
+                exit 1
+                ;;
+        esac
+    done
+    last_arg=$OPTIND
+}
+
+read_urls () {
+    args=($@)
+    count=${#args[@]}
+    if [ $count -ne 0 ]
+    then
+        echo "Urls added to queue:"
+        for (( i=0; i<$count; i++ ))
+        do  
+            url=${args[${i}]}
+            echo $url
+            filename=$(echo $url | sed 's/\//_/g' | sed 's/://g')
+            echo "$url $REFERER" >$QQEDIR/$filename.$QUEUE_EXT
+        done
+	else
+		echo "Error: no urls to add"
+		exit 1
+    fi
+}
+
+check_requests () {
+    temp_que=.queue_temp
+    if [ ! -e $QQEDIR/.queue ]
+    then
+        echo -ne >$QQEDIR/$temp_que
+    else
+        cp $QQEDIR/.queue $QQEDIR/$temp_que
+    fi
+
+    if [ -n "$(ls -tr -a $QQEDIR | grep ".$QUEUE_EXT$")" ]
+    then
+        requests=$(ls -tr -a $QQEDIR | grep ".$QUEUE_EXT$")
+        for request in $requests
+        do
+            echo $(cat $QQEDIR/$request) >>$QQEDIR/$temp_que
+            rm $QQEDIR/$request
+        done
+        cp $QQEDIR/$temp_que $QQEDIR/.queue
+    fi
+    rm $QQEDIR/$temp_que
+}
+
+remove_top_from_queue () {
+    temp_que=.queue_temp
+    if [ -e $QQEDIR/.queue ]
+    then	
+        lines_number=$(cat $QQEDIR/.queue | wc -l)
+
+        if [ $lines_number -gt 0 ]
+        then
+            if ! let lines_number-=1
+            then
+                lines_number=0
+            fi
+        echo "$(cat $QQEDIR/.queue | tail -$lines_number)" >$QQEDIR/$temp_que
+        cp $QQEDIR/$temp_que $QQEDIR/.queue
+        rm $QQEDIR/$temp_que
+        fi
+    fi
+}
+
+download_top () {
+    top_url=$(cat $QQEDIR/.queue | head -1)
+
+    if [ ${#top_url} -gt 0 ]
+    then	
+        url=$(echo $top_url | awk '{print $1}')
+        url_referer=$(echo $top_url | awk '{print $2}')
+
+        ref_dir=$(echo $url_referer | sed 's/\//_/g' | sed 's/://g')
+        url_dir=$(echo $url | sed 's/\//_/g' | sed 's/://g')
+
+        full_path=""
+
+        if [ ${#url_referer} -gt 0 ]
+        then
+            full_path="$HOME/Downloads/$ref_dir/$url_dir"
+        else
+            full_path="$HOME/Downloads/$url_dir"
+        fi
+
+        echo "downloading $url with referer $url_referer" >$QQEDIR/.status
+
+        if $GETELEMFUNC -q -c -P $full_path --referer=$url_referer $url
+        then
+            echo "$(date) $url_referer $url finished" >>$QQEDIR/.finished
+        else
+            echo "$(date) $url_referer $url failed" >>$QQEDIR/.finished
+        fi
+
+        echo "" >$QQEDIR/.status
+    fi
+}
+
+download () {
+    top_url=$(cat $QQEDIR/.queue | head -1)
+
+    while [ ${#top_url} -gt 0 ] 
+    do
+        download_top
+        remove_top_from_queue
+        top_url=$(cat $QQEDIR/.queue | head -1)
+        echo "top = $top_url"
+    done
+}
+
+daemon_loop () {
+    while true 
+    do 
+        check_requests
+        download
+        remove_top_from_queue
+        sleep 5
+    done 
+}
+
+start_daemon () {
+    echo "Daemon started"
+    exec >/dev/null 
+    exec 2>/dev/null
+    trap '' TERM 
+    trap '' HUP
+    daemon_loop &
+    echo PID = $!
+    echo $! >$QQEDIR/.pid
+}
+
+#############################################################
+
+if [ -e "${HOME}/fetch4merc" ] 
+then
+    DIR=$(cat "$HOME/.fetch4merc" | grep QQEDIR | awk -F = '{print $2}')
+    FUNC=$(cat "$HOME/.fetch4merc" | grep GETELEMFUNC | awk -F = '{print $2}')
+    if [ ${#DIR} -gt 0 ]
+    then
+        QQEDIR=$DIR
+    fi
+    if [ ${#FUNC} -gt 0 ]
+    then
+        GETELEMFUNC=$FUNC
+    fi
+    else 
+        echo QQEDIR= >"${HOME}/.fetch4merc"
+        echo GETELEMFUNC= >>"$HOME/.fetch4merc"
+fi
+
+read_arguments "$@"
+
+if [ ! -d $QQEDIR ]
+then
+    mkdir $QQEDIR
+fi
+
+read_urls ${@:$last_arg}
+
+if [ -e $QQEDIR/.pid ]
+then
+    pid=$(cat $QQEDIR/.pid)
+    if ps -A | grep $pid | grep fetch4me >/dev/null
+    then
+        echo "Daemon is already running"
+    else 
+        start_daemon
+    fi	
+else 
+    start_daemon
+fi
+
+
+
+
