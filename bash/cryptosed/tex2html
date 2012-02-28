@@ -26,7 +26,6 @@ sed '{
 		/^\\subsection{[^}]*}$/ {
             s/^\\subsection{\([^}]*\)}$/<h2>\1<\/h2>/
             x
-/..*/w temp99
             s/..*/<p>&<\/p>/
         }
 
